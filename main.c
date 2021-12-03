@@ -79,7 +79,7 @@ typedef struct bridge {
  * @param a the index of the first bridge.
  * @param b the index of the second bridge.
  */
-inline void bridge_swap(bridge_t bridges[], size_t a, size_t b) {
+void bridge_swap(bridge_t bridges[], size_t a, size_t b) {
   bridge_t tmp = bridges[a];
   bridges[a] = bridges[b];
   bridges[b] = tmp;
@@ -92,7 +92,7 @@ inline void bridge_swap(bridge_t bridges[], size_t a, size_t b) {
  * @param from the index at which the heapify procedure starts.
  * @param bridges the bridges array.
  */
-inline void heap_max_heapify(const size_t n, size_t from, bridge_t bridges[n]) {
+void heap_max_heapify(const size_t n, size_t from, bridge_t bridges[n]) {
   while (true) {
     size_t left = 2 * from + 1;
     size_t right = left + 1;
@@ -111,7 +111,7 @@ inline void heap_max_heapify(const size_t n, size_t from, bridge_t bridges[n]) {
  * @param n the number of bridges in the array.
  * @param bridges the bridges array.
  */
-inline void heap_build_max_heap(const size_t n, bridge_t bridges[n]) {
+void heap_build_max_heap(const size_t n, bridge_t bridges[n]) {
   for (int from = ((int) n / 2) - 1; from >= 0; --from) {
     heap_max_heapify(n, from, bridges);
   }
