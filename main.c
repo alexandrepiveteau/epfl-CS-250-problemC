@@ -1,6 +1,8 @@
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * Some GCC-specific macros which help indicate to the compiler whether some expressions are expected to give a certain
@@ -65,71 +67,91 @@ void uf_union_r(uf_item_t *items, int ur, int vr) {
  * A bridge that can be built between two islands, at a given cost, and by a certain company.
  */
 typedef struct bridge {
-  int from, to;
-  int cost;
+  int_fast32_t from, to;
+  int_fast16_t cost;
 } bridge_t;
 
-// MAX-PRIORITY QUEUE WITH HEAPS
+// RADIX SORT FOR BRIDGES
 
-// TODO : Inline this function.
-/**
- * Swaps two bridges from the provided array, located at indices a and b. This will work even if a and b are equal.
- *
- * @param bridges the bridges array.
- * @param a the index of the first bridge.
- * @param b the index of the second bridge.
- */
-void bridge_swap(bridge_t bridges[], size_t a, size_t b) {
-  bridge_t tmp = bridges[a];
-  bridges[a] = bridges[b];
-  bridges[b] = tmp;
-}
+#define RADIX_BITS   8                        // How many bits are in each byte.
+#define RADIX_LEVELS (sizeof(int16_t))        // The number of radix iterations we have to perform. Only use 16 LSB.
+#define RADIX_SIZE   (1 << RADIX_BITS)        // The number of bins for each radix step.
+#define RADIX_MASK   (RADIX_SIZE - 1)         // The mask to apply on each radix step.
 
 /**
- * Builds a max heap, using the cost property of bridges.
+ * Computes the frequencies of the different radix levels, incrementing the frequencies as appropriate based on the
+ * radix level.
  *
- * @param n the number of bridges in the array.
- * @param from the index at which the heapify procedure starts.
- * @param bridges the bridges array.
+ * @param m the number of bridges.
+ * @param bridges the bridges for which we're computing frequencies.
+ * @param frequencies the frequencies table to which we're writing.
  */
-void heap_max_heapify(const size_t n, size_t from, bridge_t bridges[n]) {
-  while (true) {
-    size_t left = 2 * from + 1;
-    size_t right = left + 1;
-    size_t largest = from;
-    if (left < n && bridges[left].cost > bridges[largest].cost) largest = left;
-    if (right < n && bridges[right].cost > bridges[largest].cost) largest = right;
-    if (largest == from) return;
-    bridge_swap(bridges, from, largest);
-    from = largest;
+void radix_compute_frequencies(size_t m, bridge_t bridges[m], int frequencies[RADIX_LEVELS][RADIX_SIZE]) {
+  for (int i = 0; i < m; ++i) {
+    uint_fast16_t cost = bridges[i].cost;
+    for (int l = 0; l < RADIX_LEVELS; ++l) {
+      frequencies[l][cost & RADIX_MASK]++;
+      cost = cost >> RADIX_BITS;
+    }
   }
 }
 
 /**
- * Builds a max heap from the provided bridges array.
+ * Computes the indices table for the next radix pass. Indices indicate at which position of the output buffer the
+ * items should be stored in order to fill the buffer in a tightly packed fashion.
  *
- * @param n the number of bridges in the array.
- * @param bridges the bridges array.
+ * @param level the current level for which we're computing the indices.
+ * @param frequencies the frequency counts.
+ * @param indices the indices that will be returned.
  */
-void heap_build_max_heap(const size_t n, bridge_t bridges[n]) {
-  for (int from = ((int) n / 2) - 1; from >= 0; --from) {
-    heap_max_heapify(n, from, bridges);
+void radix_compute_indices(int level, int frequencies[RADIX_LEVELS][RADIX_SIZE], int indices[RADIX_LEVELS]) {
+  int index = 0;
+  for (int i = 0; i < RADIX_SIZE; i++) {
+    indices[i] = index;
+    index += frequencies[level][i];
   }
 }
 
 /**
- * Extracts the bridge with the maximum cost from the array. Because this removes an element, you should not forget
- * to decrement the size when this is called !
- *
- * @param n the number of bridges in the array.
- * @param bridges the bridges array.
- * @return the extracted maximum.
+ * Reverses the provided array of bridges in-place, in order to guarantee decreasing costs rather than increasing costs.
+ * @param m the size of the array.
+ * @param bridges the bridges.
  */
-bridge_t heap_extract_max(const size_t n, bridge_t bridges[n]) {
-  bridge_t max = bridges[0];
-  bridges[0] = bridges[n - 1];
-  heap_max_heapify(n - 1, 0, bridges);
-  return max;
+void radix_reverse(size_t m, bridge_t bridges[m]) {
+  size_t low = 0;
+  size_t high = m - 1;
+  while (low < high) {
+    bridge_t tmp = bridges[low];
+    bridges[low] = bridges[high];
+    bridges[high] = tmp;
+    low++;
+    high--;
+  }
+}
+
+/**
+ * Applies radix sorting to the given array of bridges. Radix may be considerably more cache-friendly than a
+ * max-priority heap sort, hence why it might be preferred to obtain some good running times.
+ *
+ * @param m the number of bridges which are to be sorted.
+ * @param bridges the bridges to sort.
+ */
+void radix_sort_decreasing(size_t m, bridge_t bridges[m]) {
+  if (m == 0) return;
+  int frequencies[RADIX_LEVELS][RADIX_SIZE] = {0};
+  int indices[RADIX_LEVELS] = {0};
+  bridge_t buffer[m];
+  radix_compute_frequencies(m, bridges, frequencies);
+  for (int l = 0; l < RADIX_LEVELS; ++l) {
+    radix_compute_indices(l, frequencies, indices);
+    for (int i = 0; i < m; i++) {
+      bridge_t bridge = bridges[i];
+      int queue = (bridge.cost >> (l * RADIX_BITS)) & RADIX_MASK;
+      buffer[indices[queue]++] = bridge;
+    }
+    memcpy(bridges, buffer, sizeof(bridge_t) * m);
+  }
+  radix_reverse(m, bridges);
 }
 
 /**
@@ -149,17 +171,17 @@ result_t solve(int n, int m, bridge_t bridges[m]) {
   }
 
   // Prepare the bridges queue.
-  heap_build_max_heap(m, bridges);
+  radix_sort_decreasing(m, bridges);
 
   // Iterate over all the bridges, and compute the resulting sum !
   result_t result;
   result.blue = 0;
   result.red = 0;
   int total = 0;
-  int remaining = m;
+  int index = 0;
 
-  while (total < n - 1 && remaining > 0) {
-    bridge_t bridge = heap_extract_max(remaining--, bridges);
+  while (total < n - 1 && index < m) {
+    bridge_t bridge = bridges[index++];
     int fr = uf_find(uf, bridge.from);
     int tr = uf_find(uf, bridge.to);
     if (fr != tr) {
@@ -247,9 +269,9 @@ int main() {
   bridge_t bridges[m];
 
   for (int i = 0; i < m; i++) {
-    int from = scan_int();
-    int to = scan_int();
-    int cost = scan_int();
+    int_fast32_t from = (int_fast32_t) scan_int();
+    int_fast32_t to = (int_fast32_t) scan_int();
+    int_fast16_t cost = (int_fast16_t) scan_int();
     char company = scan_char();
 
     bridges[i].from = from - 1;
