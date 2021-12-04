@@ -177,15 +177,12 @@ result_t solve(int n, int m, bridge_t bridges[m]) {
   result_t result;
   result.blue = 0;
   result.red = 0;
-  int total = 0;
-  int index = 0;
 
-  while (total < n - 1 && index < m) {
-    bridge_t bridge = bridges[index++];
+  for (int i = 0; i < m; ++i) {
+    bridge_t bridge = bridges[i];
     int fr = uf_find(uf, bridge.from);
     int tr = uf_find(uf, bridge.to);
     if (fr != tr) {
-      total++;
       uf_union_r(uf, fr, tr);
       if ((bridge.cost & BRIDGE_MARK_RED) == BRIDGE_MARK_RED) {
         result.red += bridge.cost & BRIDGE_MASK_COST;
