@@ -113,45 +113,36 @@ void radix_compute_indices(int level, int frequencies[RADIX_LEVELS][RADIX_SIZE],
 }
 
 /**
- * Reverses the provided array of bridges in-place, in order to guarantee decreasing costs rather than increasing costs.
- * @param m the size of the array.
- * @param bridges the bridges.
- */
-void radix_reverse(size_t m, bridge_t bridges[m]) {
-  size_t low = 0;
-  size_t high = m - 1;
-  while (low < high) {
-    bridge_t tmp = bridges[low];
-    bridges[low] = bridges[high];
-    bridges[high] = tmp;
-    low++;
-    high--;
-  }
-}
-
-/**
  * Applies radix sorting to the given array of bridges. Radix may be considerably more cache-friendly than a
  * max-priority heap sort, hence why it might be preferred to obtain some good running times.
  *
  * @param m the number of bridges which are to be sorted.
  * @param bridges the bridges to sort.
  */
-void radix_sort_decreasing(size_t m, bridge_t bridges[m]) {
+void radix_sort_increasing(size_t m, bridge_t bridges[m]) {
   if (m == 0) return;
   int frequencies[RADIX_LEVELS][RADIX_SIZE] = {0};
   int indices[RADIX_LEVELS] = {0};
   bridge_t buffer[m];
-  radix_compute_frequencies(m, bridges, frequencies);
+
+  bridge_t *from = bridges;
+  bridge_t *to = buffer;
+
+  radix_compute_frequencies(m, from, frequencies);
   for (int l = 0; l < RADIX_LEVELS; ++l) {
     radix_compute_indices(l, frequencies, indices);
     for (int i = 0; i < m; i++) {
-      bridge_t bridge = bridges[i];
+      bridge_t bridge = from[i];
       int queue = (bridge.cost >> (l * RADIX_BITS)) & RADIX_MASK;
-      buffer[indices[queue]++] = bridge;
+      to[indices[queue]++] = bridge;
     }
-    memcpy(bridges, buffer, sizeof(bridge_t) * m);
+    // Swap from and to.
+    bridge_t *tmp = from;
+    from = to;
+    to = tmp;
   }
-  radix_reverse(m, bridges);
+  // If from is the original bridge, copy the results.
+  if (bridges == to) memcpy(from, to, sizeof(bridge_t) * m);
 }
 
 /**
@@ -171,14 +162,14 @@ result_t solve(int n, int m, bridge_t bridges[m]) {
   }
 
   // Prepare the bridges queue.
-  radix_sort_decreasing(m, bridges);
+  radix_sort_increasing(m, bridges);
 
   // Iterate over all the bridges, and compute the resulting sum !
   result_t result;
   result.blue = 0;
   result.red = 0;
 
-  for (int i = 0; i < m; ++i) {
+  for (int i = m - 1; i >= 0; --i) {
     bridge_t bridge = bridges[i];
     int fr = uf_find(uf, bridge.from);
     int tr = uf_find(uf, bridge.to);
